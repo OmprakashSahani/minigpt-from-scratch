@@ -46,6 +46,8 @@ def main():
         vocab_size=checkpoint["vocab_size"],
         embed_dim=checkpoint["embed_dim"],
         block_size=checkpoint["block_size"],
+        num_heads=checkpoint["num_heads"],
+        num_layers=checkpoint["num_layers"],
     )
 
     model.load_state_dict(checkpoint["model_state_dict"])
