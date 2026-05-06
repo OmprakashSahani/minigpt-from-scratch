@@ -78,13 +78,15 @@ class TransformerBlock(nn.Module):
 
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, embed_dim, block_size, num_heads=4):
+    def __init__(self, vocab_size, embed_dim, block_size, num_heads=4, num_layers=2):
         super().__init__()
 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.position_embedding = nn.Embedding(block_size, embed_dim)
 
-        self.block = TransformerBlock(embed_dim, block_size, num_heads)
+        self.blocks = nn.Sequential(
+            *[TransformerBlock(embed_dim, block_size, num_heads) for _ in range(num_layers)]
+        )
         self.ln_final = nn.LayerNorm(embed_dim)
         self.lm_head = nn.Linear(embed_dim, vocab_size)
 
@@ -97,7 +99,7 @@ class MiniGPT(nn.Module):
         position_embeddings = self.position_embedding(positions)
 
         x = token_embeddings + position_embeddings
-        x = self.block(x)
+        x = self.blocks(x)
         x = self.ln_final(x)
 
         logits = self.lm_head(x)
