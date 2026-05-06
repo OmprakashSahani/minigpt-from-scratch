@@ -3,9 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class CausalSelfAttention(nn.Module):
-    def __init__(self, embed_dim, block_size):
+class MultiHeadCausalSelfAttention(nn.Module):
+    def __init__(self, embed_dim, block_size, num_heads):
         super().__init__()
+
+        assert embed_dim % num_heads == 0
+
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
 
         self.query = nn.Linear(embed_dim, embed_dim)
         self.key = nn.Linear(embed_dim, embed_dim)
@@ -24,12 +29,18 @@ class CausalSelfAttention(nn.Module):
         k = self.key(x)
         v = self.value(x)
 
+        q = q.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+
         scores = q @ k.transpose(-2, -1)
-        scores = scores / (C ** 0.5)
+        scores = scores / (self.head_dim ** 0.5)
         scores = scores.masked_fill(self.mask[:T, :T] == 0, float("-inf"))
 
         weights = F.softmax(scores, dim=-1)
         out = weights @ v
+
+        out = out.transpose(1, 2).contiguous().view(B, T, C)
         out = self.proj(out)
 
         return out
@@ -50,11 +61,11 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, block_size):
+    def __init__(self, embed_dim, block_size, num_heads):
         super().__init__()
 
         self.ln1 = nn.LayerNorm(embed_dim)
-        self.attention = CausalSelfAttention(embed_dim, block_size)
+        self.attention = MultiHeadCausalSelfAttention(embed_dim, block_size, num_heads)
 
         self.ln2 = nn.LayerNorm(embed_dim)
         self.feed_forward = FeedForward(embed_dim)
@@ -67,13 +78,13 @@ class TransformerBlock(nn.Module):
 
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, embed_dim, block_size):
+    def __init__(self, vocab_size, embed_dim, block_size, num_heads=4):
         super().__init__()
 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.position_embedding = nn.Embedding(block_size, embed_dim)
 
-        self.block = TransformerBlock(embed_dim, block_size)
+        self.block = TransformerBlock(embed_dim, block_size, num_heads)
         self.ln_final = nn.LayerNorm(embed_dim)
         self.lm_head = nn.Linear(embed_dim, vocab_size)
 
