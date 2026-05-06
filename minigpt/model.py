@@ -10,6 +10,7 @@ class CausalSelfAttention(nn.Module):
         self.query = nn.Linear(embed_dim, embed_dim)
         self.key = nn.Linear(embed_dim, embed_dim)
         self.value = nn.Linear(embed_dim, embed_dim)
+        self.proj = nn.Linear(embed_dim, embed_dim)
 
         self.register_buffer(
             "mask",
@@ -25,17 +26,44 @@ class CausalSelfAttention(nn.Module):
 
         scores = q @ k.transpose(-2, -1)
         scores = scores / (C ** 0.5)
-
-        scores = scores.masked_fill(
-            self.mask[:T, :T] == 0,
-            float("-inf")
-        )
+        scores = scores.masked_fill(self.mask[:T, :T] == 0, float("-inf"))
 
         weights = F.softmax(scores, dim=-1)
-
         out = weights @ v
+        out = self.proj(out)
 
         return out
+
+
+class FeedForward(nn.Module):
+    def __init__(self, embed_dim):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(embed_dim, 4 * embed_dim),
+            nn.ReLU(),
+            nn.Linear(4 * embed_dim, embed_dim),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim, block_size):
+        super().__init__()
+
+        self.ln1 = nn.LayerNorm(embed_dim)
+        self.attention = CausalSelfAttention(embed_dim, block_size)
+
+        self.ln2 = nn.LayerNorm(embed_dim)
+        self.feed_forward = FeedForward(embed_dim)
+
+    def forward(self, x):
+        x = x + self.attention(self.ln1(x))
+        x = x + self.feed_forward(self.ln2(x))
+
+        return x
 
 
 class MiniGPT(nn.Module):
@@ -44,7 +72,9 @@ class MiniGPT(nn.Module):
 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.position_embedding = nn.Embedding(block_size, embed_dim)
-        self.attention = CausalSelfAttention(embed_dim, block_size)
+
+        self.block = TransformerBlock(embed_dim, block_size)
+        self.ln_final = nn.LayerNorm(embed_dim)
         self.lm_head = nn.Linear(embed_dim, vocab_size)
 
     def forward(self, x, targets=None):
@@ -56,7 +86,8 @@ class MiniGPT(nn.Module):
         position_embeddings = self.position_embedding(positions)
 
         x = token_embeddings + position_embeddings
-        x = self.attention(x)
+        x = self.block(x)
+        x = self.ln_final(x)
 
         logits = self.lm_head(x)
 
