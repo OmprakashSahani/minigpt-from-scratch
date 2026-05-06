@@ -1,0 +1,5 @@
+machine learning systems optimize computation memory and communication
+distributed training improves scalability
+attention helps models understand context
+transformers use self attention for language modeling
+large language models predict the next token
