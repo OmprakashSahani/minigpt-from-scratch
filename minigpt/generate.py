@@ -15,7 +15,14 @@ class LoadedTokenizer:
         return "".join(self.itos[int(i)] for i in ids)
 
 
-def generate(model, tokenizer, prompt, max_new_tokens=100):
+def generate(
+    model,
+    tokenizer,
+    prompt,
+    max_new_tokens=300,
+    temperature=0.8,
+    top_k=10,
+):
     model.eval()
 
     ids = tokenizer.encode(prompt)
@@ -27,7 +34,19 @@ def generate(model, tokenizer, prompt, max_new_tokens=100):
         logits, _ = model(x_cond)
         logits = logits[:, -1, :]
 
-        next_id = torch.argmax(logits, dim=-1, keepdim=True)
+        logits = logits / temperature
+
+        values, _ = torch.topk(logits, top_k)
+        min_value = values[:, -1].unsqueeze(1)
+
+        logits = torch.where(
+            logits < min_value,
+            torch.full_like(logits, float("-inf")),
+            logits,
+        )
+
+        probs = torch.softmax(logits, dim=-1)
+        next_id = torch.multinomial(probs, num_samples=1)
 
         x = torch.cat([x, next_id], dim=1)
 
@@ -52,7 +71,16 @@ def main():
 
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    print(generate(model, tokenizer, prompt="machine", max_new_tokens=100))
+    print(
+        generate(
+            model,
+            tokenizer,
+            prompt="First",
+            max_new_tokens=300,
+            temperature=0.8,
+            top_k=10,
+        )
+    )
 
 
 if __name__ == "__main__":
