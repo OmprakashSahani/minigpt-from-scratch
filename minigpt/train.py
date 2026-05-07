@@ -3,13 +3,24 @@ import torch
 from minigpt import config
 from minigpt.model import MiniGPT
 from minigpt.tokenizer import CharTokenizer
-from minigpt.utils import count_parameters, count_trainable_parameters
+from minigpt.utils import (
+    count_parameters,
+    count_trainable_parameters,
+    get_device,
+)
 
 
 def get_batch(split_data, block_size, batch_size):
-    ix = torch.randint(0, len(split_data) - block_size - 1, (batch_size,))
+    ix = torch.randint(
+        0,
+        len(split_data) - block_size - 1,
+        (batch_size,),
+        device=split_data.device,
+    )
+
     x = torch.stack([split_data[i:i + block_size] for i in ix])
     y = torch.stack([split_data[i + 1:i + block_size + 1] for i in ix])
+
     return x, y
 
 
@@ -36,7 +47,14 @@ def main():
     text = open("data/input.txt").read()
     tokenizer = CharTokenizer(text)
 
-    data = torch.tensor(tokenizer.encode(text), dtype=torch.long)
+    device = get_device(config.DEVICE)
+    print(f"Using device: {device}")
+
+    data = torch.tensor(
+        tokenizer.encode(text),
+        dtype=torch.long,
+        device=device,
+    )
 
     split_idx = int(0.9 * len(data))
     train_data = data[:split_idx]
@@ -57,6 +75,8 @@ def main():
         num_heads=num_heads,
         num_layers=num_layers,
     )
+
+    model = model.to(device)
 
     print(f"Total parameters: {count_parameters(model):,}")
     print(f"Trainable parameters: {count_trainable_parameters(model):,}")
