@@ -23,7 +23,7 @@ def estimate_loss(model, train_data, val_data, block_size, batch_size, eval_iter
 
         for _ in range(eval_iters):
             x, y = get_batch(split_data, block_size, batch_size)
-            _, loss = model(x, y)
+            _, loss, _ = model(x, y)
             losses.append(loss.item())
 
         out[split] = sum(losses) / len(losses)
@@ -69,7 +69,7 @@ def main():
     for step in range(steps):
         x, y = get_batch(train_data, block_size, batch_size)
 
-        _, loss = model(x, y)
+        _, loss, _ = model(x, y)
 
         optimizer.zero_grad()
         loss.backward()

@@ -31,7 +31,7 @@ def generate(
     for _ in range(max_new_tokens):
         x_cond = x[:, -model.position_embedding.num_embeddings:]
 
-        logits, _ = model(x_cond)
+        logits, _, _ = model(x_cond)
         logits = logits[:, -1, :]
 
         logits = logits / temperature
