@@ -48,7 +48,10 @@ def main():
     tokenizer = CharTokenizer(text)
 
     device = get_device(config.DEVICE)
+    use_amp = config.USE_AMP and device.type == "cuda"
+
     print(f"Using device: {device}")
+    print(f"Using AMP: {use_amp}")
 
     data = torch.tensor(
         tokenizer.encode(text),
@@ -60,48 +63,43 @@ def main():
     train_data = data[:split_idx]
     val_data = data[split_idx:]
 
-    block_size = config.BLOCK_SIZE
-    embed_dim = config.EMBED_DIM
-    batch_size = config.BATCH_SIZE
-    steps = config.STEPS
-    lr = config.LEARNING_RATE
-    num_heads = config.NUM_HEADS
-    num_layers = config.NUM_LAYERS
-
     model = MiniGPT(
         vocab_size=tokenizer.vocab_size,
-        embed_dim=embed_dim,
-        block_size=block_size,
-        num_heads=num_heads,
-        num_layers=num_layers,
-    )
-
-    model = model.to(device)
+        embed_dim=config.EMBED_DIM,
+        block_size=config.BLOCK_SIZE,
+        num_heads=config.NUM_HEADS,
+        num_layers=config.NUM_LAYERS,
+    ).to(device)
 
     print(f"Total parameters: {count_parameters(model):,}")
     print(f"Trainable parameters: {count_trainable_parameters(model):,}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
+
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     train_loss_history = []
     val_loss_history = []
 
-    for step in range(steps):
-        x, y = get_batch(train_data, block_size, batch_size)
-
-        _, loss, _ = model(x, y)
+    for step in range(config.STEPS):
+        x, y = get_batch(train_data, config.BLOCK_SIZE, config.BATCH_SIZE)
 
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            _, loss, _ = model(x, y)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         if step % 50 == 0:
             losses = estimate_loss(
                 model=model,
                 train_data=train_data,
                 val_data=val_data,
-                block_size=block_size,
-                batch_size=batch_size,
+                block_size=config.BLOCK_SIZE,
+                batch_size=config.BATCH_SIZE,
             )
 
             train_loss_history.append(losses["train"])
@@ -117,10 +115,10 @@ def main():
         {
             "model_state_dict": model.state_dict(),
             "vocab_size": tokenizer.vocab_size,
-            "embed_dim": embed_dim,
-            "block_size": block_size,
-            "num_heads": num_heads,
-            "num_layers": num_layers,
+            "embed_dim": config.EMBED_DIM,
+            "block_size": config.BLOCK_SIZE,
+            "num_heads": config.NUM_HEADS,
+            "num_layers": config.NUM_LAYERS,
             "stoi": tokenizer.stoi,
             "itos": tokenizer.itos,
         },
