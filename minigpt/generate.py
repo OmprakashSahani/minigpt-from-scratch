@@ -1,18 +1,7 @@
 import torch
 
 from minigpt.model import MiniGPT
-
-
-class LoadedTokenizer:
-    def __init__(self, stoi, itos):
-        self.stoi = stoi
-        self.itos = {int(k): v for k, v in itos.items()}
-
-    def encode(self, text):
-        return [self.stoi[ch] for ch in text]
-
-    def decode(self, ids):
-        return "".join(self.itos[int(i)] for i in ids)
+from minigpt.tokenizer_loader import load_tokenizer
 
 
 def generate(
@@ -56,10 +45,7 @@ def generate(
 def main():
     checkpoint = torch.load("model.pt", map_location="cpu")
 
-    tokenizer = LoadedTokenizer(
-        checkpoint["stoi"],
-        checkpoint["itos"],
-    )
+    tokenizer = load_tokenizer(checkpoint)
 
     model = MiniGPT(
         vocab_size=checkpoint["vocab_size"],

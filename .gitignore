@@ -217,4 +217,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Virtual environment
 minigpt-venv/
+
+# Model checkpoints
+*.pt
+
+# Experiment logs
+experiments/logs/
+
+# Generated plots
+*.png
+
+# Training histories
+*_history.txt
