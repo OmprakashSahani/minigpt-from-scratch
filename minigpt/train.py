@@ -76,6 +76,11 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
 
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config.STEPS,
+    )
+
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     train_loss_history = []
@@ -90,8 +95,19 @@ def main():
             _, loss, _ = model(x, y)
 
         scaler.scale(loss).backward()
+
+        scaler.unscale_(optimizer)
+
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(),
+            config.GRAD_CLIP,
+        )
+
         scaler.step(optimizer)
         scaler.update()
+
+        if config.USE_SCHEDULER:
+            scheduler.step()
 
         if step % 50 == 0:
             losses = estimate_loss(
@@ -108,7 +124,8 @@ def main():
             print(
                 f"step {step}, "
                 f"train loss {losses['train']:.4f}, "
-                f"val loss {losses['val']:.4f}"
+                f"val loss {losses['val']:.4f}, "
+                f"lr {optimizer.param_groups[0]['lr']:.6f}"
             )
 
     torch.save(

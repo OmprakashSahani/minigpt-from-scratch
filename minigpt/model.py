@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from minigpt import config
+
 
 class MultiHeadCausalSelfAttention(nn.Module):
     def __init__(self, embed_dim, block_size, num_heads):
@@ -17,10 +19,14 @@ class MultiHeadCausalSelfAttention(nn.Module):
         self.value = nn.Linear(embed_dim, embed_dim)
         self.proj = nn.Linear(embed_dim, embed_dim)
 
+        self.dropout = nn.Dropout(config.DROPOUT)
+
         self.register_buffer(
             "mask",
-            torch.tril(torch.ones(block_size, block_size))
+            torch.tril(torch.ones(block_size, block_size)),
         )
+
+        self.last_attention_weights = None
 
     def forward(self, x, past_k=None, past_v=None):
         B, T, C = x.shape
@@ -50,9 +56,11 @@ class MultiHeadCausalSelfAttention(nn.Module):
         scores = scores.masked_fill(mask == 0, float("-inf"))
 
         weights = F.softmax(scores, dim=-1)
+        self.last_attention_weights = weights.detach()
+
+        weights = self.dropout(weights)
 
         out = weights @ v
-
         out = out.transpose(1, 2).contiguous().view(B, T, C)
         out = self.proj(out)
 
@@ -67,6 +75,7 @@ class FeedForward(nn.Module):
             nn.Linear(embed_dim, 4 * embed_dim),
             nn.ReLU(),
             nn.Linear(4 * embed_dim, embed_dim),
+            nn.Dropout(config.DROPOUT),
         )
 
     def forward(self, x):
@@ -78,7 +87,11 @@ class TransformerBlock(nn.Module):
         super().__init__()
 
         self.ln1 = nn.LayerNorm(embed_dim)
-        self.attention = MultiHeadCausalSelfAttention(embed_dim, block_size, num_heads)
+        self.attention = MultiHeadCausalSelfAttention(
+            embed_dim,
+            block_size,
+            num_heads,
+        )
 
         self.ln2 = nn.LayerNorm(embed_dim)
         self.feed_forward = FeedForward(embed_dim)
@@ -97,15 +110,26 @@ class TransformerBlock(nn.Module):
 
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, embed_dim, block_size, num_heads=4, num_layers=2):
+    def __init__(
+        self,
+        vocab_size,
+        embed_dim,
+        block_size,
+        num_heads=4,
+        num_layers=2,
+    ):
         super().__init__()
 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.position_embedding = nn.Embedding(block_size, embed_dim)
 
         self.blocks = nn.Sequential(
-            *[TransformerBlock(embed_dim, block_size, num_heads) for _ in range(num_layers)]
+            *[
+                TransformerBlock(embed_dim, block_size, num_heads)
+                for _ in range(num_layers)
+            ]
         )
+
         self.ln_final = nn.LayerNorm(embed_dim)
         self.lm_head = nn.Linear(embed_dim, vocab_size)
 
@@ -124,7 +148,10 @@ class MiniGPT(nn.Module):
             device=x.device,
         )
 
-        positions = positions.clamp(max=self.position_embedding.num_embeddings - 1)
+        positions = positions.clamp(
+            max=self.position_embedding.num_embeddings - 1
+        )
+
         position_embeddings = self.position_embedding(positions)
 
         x = token_embeddings + position_embeddings
@@ -147,6 +174,7 @@ class MiniGPT(nn.Module):
             new_cache.append((k, v))
 
         x = self.ln_final(x)
+
         logits = self.lm_head(x)
 
         loss = None
